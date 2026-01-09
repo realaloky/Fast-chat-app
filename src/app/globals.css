@@ -19,6 +19,12 @@ body {
   color: #f1f5f9;
 }
 
+
+## Also Add This CSS for Animations
+
+### Go to `src/app/globals.css` and ADD these lines at the end:
+
+```css
 @keyframes fade-in {
   from {
     opacity: 0;
@@ -32,4 +38,4 @@ body {
 
 .animate-fade-in {
   animation: fade-in 0.3s ease-out;
-}
+  }
