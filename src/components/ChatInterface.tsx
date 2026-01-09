@@ -125,7 +125,9 @@ export default function ChatInterface({ user, onLogout }: Props) {
     if (data) {
       setSearchResults(data as User[])
     }
-    }const subscribeToMessages = () => {
+  }
+
+  const subscribeToMessages = () => {
     const channel = supabase
       .channel('messages')
       .on(
@@ -535,7 +537,8 @@ export default function ChatInterface({ user, onLogout }: Props) {
             <p className="text-xl font-semibold text-slate-300 mb-2">No messages yet</p>
             <p className="text-sm text-slate-500">Send the first message to {targetUsername}!</p>
           </div>
-        ) : (filteredMessages.map((msg, index) => {
+        ) : (
+          filteredMessages.map((msg, index) => {
             const isOwn = msg.sender_id === user.id
             const showTimestamp = index === 0 || 
               (new Date(msg.created_at).getTime() - new Date(filteredMessages[index - 1].created_at).getTime() > 300000)
@@ -617,54 +620,53 @@ export default function ChatInterface({ user, onLogout }: Props) {
             className="p-3 bg-slate-700 hover:bg-slate-600 rounded-full transition-all shadow-lg"
           >
             <svg className="w-6 h-6 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-          </button>
-          
-          <div className="flex-1 relative">
-            <input
-              ref={inputRef}
-              type="text"
-              value={inputValue}
-              onChange={handleInputChange}
-              placeholder={
-                activeTarget
-                  ? 'Type a message...'
-                  : 'Type @<user_code> to start'
-              }
-              className="w-full px-4 py-3 bg-slate-700 border border-slate-600 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-slate-100 placeholder-slate-400 shadow-inner"
-              autoComplete="off"
-            />
-            {isTyping && (
-              <div className="absolute right-3 top-3 flex gap-1">
-                <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"></div>
-                <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-                <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-              </div>
-            )}
-          </div>
-          
-          <button
-            type="submit"
-            disabled={!inputValue.trim()}
-            className="px-5 py-3 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 disabled:from-slate-700 disabled:to-slate-700 rounded-2xl font-semibold transition-all shadow-lg disabled:shadow-none flex items-center gap-2 disabled:opacity-50"
-          >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-            </svg>
-          </button>
-        </div>
-        
-        {!activeTarget && (
-          <div className="mt-3 flex items-center justify-center gap-2">
-            <svg className="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <p className="text-xs text-slate-400">
-              Use @1234567890 to send to a specific user
-            </p>
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 90 11-18 0 9 9 0 0118 0z" />
+    <div className="flex-1 relative">
+        <input
+          ref={inputRef}
+          type="text"
+          value={inputValue}
+          onChange={handleInputChange}
+          placeholder={
+            activeTarget
+              ? 'Type a message...'
+              : 'Type @<user_code> to start'
+          }
+          className="w-full px-4 py-3 bg-slate-700 border border-slate-600 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-slate-100 placeholder-slate-400 shadow-inner"
+          autoComplete="off"
+        />
+        {isTyping && (
+          <div className="absolute right-3 top-3 flex gap-1">
+            <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"></div>
+            <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+            <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
           </div>
         )}
-      </form>
+      </div>
+      
+      <button
+        type="submit"
+        disabled={!inputValue.trim()}
+        className="px-5 py-3 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 disabled:from-slate-700 disabled:to-slate-700 rounded-2xl font-semibold transition-all shadow-lg disabled:shadow-none flex items-center gap-2 disabled:opacity-50"
+      >
+        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+        </svg>
+      </button>
     </div>
-  )
+    
+    {!activeTarget && (
+      <div className="mt-3 flex items-center justify-center gap-2">
+        <svg className="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        <p className="text-xs text-slate-400">
+          Use @1234567890 to send to a specific user
+        </p>
+      </div>
+    )}
+  </form>
+</div>
+)
+}
+
