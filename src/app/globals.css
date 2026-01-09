@@ -1,22 +1,20 @@
-import { createClient } from '@supabase/supabase-js'
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
-
-export type User = {
-  id: string
-  username: string
-  password: string
-  user_code: string
-  created_at: string
+* {
+  box-sizing: border-box;
+  padding: 0;
+  margin: 0;
 }
 
-export type Message = {
-  id: string
-  sender_id: string
-  receiver_id: string
-  content: string
-  created_at: string
+html,
+body {
+  max-width: 100vw;
+  overflow-x: hidden;
+}
+
+body {
+  background: #0f172a;
+  color: #f1f5f9;
 }
