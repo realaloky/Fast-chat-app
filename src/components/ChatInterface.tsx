@@ -12,7 +12,10 @@ export default function ChatInterface({ user, onLogout }: Props) {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [activeTarget, setActiveTarget] = useState<User | null>(null)
+  const [isTyping, setIsTyping] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+
+  /* -------------------- EFFECTS -------------------- */
 
   useEffect(() => {
     loadMessages()
@@ -25,6 +28,8 @@ export default function ChatInterface({ user, onLogout }: Props) {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  /* -------------------- DATA -------------------- */
 
   const loadMessages = async () => {
     const { data } = await supabase
@@ -52,6 +57,8 @@ export default function ChatInterface({ user, onLogout }: Props) {
       .subscribe()
   }
 
+  /* -------------------- CHAT LOGIC -------------------- */
+
   const startChatWithCode = async (code: string) => {
     const { data } = await supabase
       .from('users')
@@ -71,11 +78,11 @@ export default function ChatInterface({ user, onLogout }: Props) {
     e.preventDefault()
     if (!input.trim()) return
 
-    // Start chat via @code
+    // Start chat using @code
     if (!activeTarget && input.startsWith('@')) {
       const match = input.match(/^@(\d{10})/)
       if (!match) {
-        alert('Invalid format. Use @1234567890')
+        alert('Use @<10 digit user code>')
         return
       }
       await startChatWithCode(match[1])
@@ -88,6 +95,8 @@ export default function ChatInterface({ user, onLogout }: Props) {
       return
     }
 
+    setIsTyping(false)
+
     await supabase.from('messages').insert({
       sender_id: user.id,
       receiver_id: activeTarget.id,
@@ -97,7 +106,9 @@ export default function ChatInterface({ user, onLogout }: Props) {
     setInput('')
   }
 
-  const chatMessages = activeTarget
+  /* -------------------- UI HELPERS -------------------- */
+
+  const filteredMessages = activeTarget
     ? messages.filter(
         (m) =>
           (m.sender_id === user.id &&
@@ -107,58 +118,72 @@ export default function ChatInterface({ user, onLogout }: Props) {
       )
     : []
 
+  /* -------------------- RENDER -------------------- */
+
   return (
-    <div className="h-screen flex flex-col bg-slate-900">
-      {/* Header */}
-      <header className="flex items-center justify-between px-6 py-4 bg-slate-800 border-b border-slate-700">
-        <div>
-          <p className="text-xs text-slate-400">Your Code</p>
-          <p className="text-lg font-bold text-blue-400">
-            {user.user_code}
-          </p>
-          {activeTarget && (
-            <p className="text-sm text-green-400">
-              Chatting with {activeTarget.username}
+    <div className="h-screen flex flex-col bg-slate-950 text-slate-100">
+      {/* HEADER */}
+      <header className="flex items-center justify-between px-6 py-4 bg-slate-900 border-b border-slate-800">
+        <div className="flex items-center gap-4">
+          <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center font-bold uppercase">
+            {activeTarget
+              ? activeTarget.username[0]
+              : user.username[0]}
+          </div>
+          <div>
+            <p className="text-sm text-slate-400">Chat</p>
+            <p className="text-lg font-semibold">
+              {activeTarget ? activeTarget.username : 'No active chat'}
             </p>
-          )}
+          </div>
         </div>
-        <button
-          onClick={onLogout}
-          className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg text-sm font-semibold"
-        >
-          Logout
-        </button>
+
+        <div className="flex items-center gap-4">
+          <div className="text-right">
+            <p className="text-xs text-slate-400">Your Code</p>
+            <p className="text-sm font-bold text-blue-400">
+              {user.user_code}
+            </p>
+          </div>
+          <button
+            onClick={onLogout}
+            className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg text-sm"
+          >
+            Logout
+          </button>
+        </div>
       </header>
 
-      {/* Messages */}
-      <main className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
+      {/* CHAT AREA */}
+      <main className="flex-1 overflow-y-auto px-6 py-6 space-y-4">
         {!activeTarget ? (
-          <div className="text-center text-slate-400 mt-24">
-            <p className="text-lg font-medium">No active chat</p>
-            <p className="text-sm mt-2">
-              Start by typing <span className="text-blue-400">@user_code</span>
+          <div className="h-full flex flex-col items-center justify-center text-slate-400">
+            <p className="text-2xl font-semibold mb-2">
+              Start a conversation
+            </p>
+            <p className="text-sm">
+              Type <span className="text-blue-400">@user_code</span> below
             </p>
           </div>
         ) : (
-          chatMessages.map((msg) => {
+          filteredMessages.map((msg) => {
             const isMe = msg.sender_id === user.id
             return (
               <div
                 key={msg.id}
-                className={`flex ${
-                  isMe ? 'justify-end' : 'justify-start'
-                }`}
+                className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}
               >
                 <div
-                  className={`max-w-[65%] px-4 py-2 rounded-2xl text-sm ${
+                  className={`max-w-[70%] px-4 py-3 rounded-3xl text-sm leading-relaxed ${
                     isMe
                       ? 'bg-blue-600 text-white rounded-br-none'
-                      : 'bg-slate-700 text-slate-100 rounded-bl-none'
+                      : 'bg-slate-800 text-slate-100 rounded-bl-none'
                   }`}
                 >
-                  <p className="break-words">{msg.content}</p>
-                  <p className="text-[10px] opacity-70 mt-1 text-right">
+                  <p className="whitespace-pre-wrap">{msg.content}</p>
+                  <p className="text-[10px] opacity-60 mt-2 text-right">
                     {new Date(msg.created_at).toLocaleTimeString()}
+                    {isMe && ' • Sent'}
                   </p>
                 </div>
               </div>
@@ -168,29 +193,45 @@ export default function ChatInterface({ user, onLogout }: Props) {
         <div ref={messagesEndRef} />
       </main>
 
-      {/* Input */}
+      {/* INPUT */}
       <form
         onSubmit={handleSend}
-        className="px-6 py-4 bg-slate-800 border-t border-slate-700"
+        className="px-6 py-4 bg-slate-900 border-t border-slate-800"
       >
-        <div className="flex gap-3">
-          <input
+        <div className="flex gap-3 items-end">
+          <textarea
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => {
+              setInput(e.target.value)
+              setIsTyping(true)
+            }}
+            rows={1}
             placeholder={
               activeTarget
-                ? 'Type a message...'
+                ? 'Message...'
                 : 'Type @<user_code> to start chat'
             }
-            className="flex-1 px-4 py-3 bg-slate-700 border border-slate-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="flex-1 resize-none px-4 py-3 bg-slate-800 border border-slate-700 rounded-2xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault()
+                handleSend(e)
+              }
+            }}
           />
           <button
             type="submit"
-            className="px-6 py-3 bg-blue-600 hover:bg-blue-700 rounded-xl font-semibold"
+            disabled={!input.trim()}
+            className="px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-900 rounded-2xl font-semibold"
           >
             Send
           </button>
         </div>
+        {isTyping && activeTarget && (
+          <p className="text-xs text-slate-400 mt-2">
+            Typing…
+          </p>
+        )}
       </form>
     </div>
   )
