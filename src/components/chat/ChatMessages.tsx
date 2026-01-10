@@ -6,6 +6,11 @@ import EmptyState from './EmptyState'
 
 type MessageWithUser = Message & {
   sender_username?: string
+  reply_to?: {
+    id: string
+    content: string
+    sender_username: string
+  }
 }
 
 type Props = {
@@ -15,6 +20,10 @@ type Props = {
   targetUsername: string
   loading: boolean
   messagesEndRef: React.RefObject<HTMLDivElement>
+  onReact: (messageId: string, emoji: string) => void
+  onReply: (message: MessageWithUser) => void
+  onEdit: (message: MessageWithUser) => void
+  onDelete: (messageId: string, forEveryone: boolean) => void
 }
 
 export default function ChatMessages({
@@ -23,7 +32,11 @@ export default function ChatMessages({
   activeTarget,
   targetUsername,
   loading,
-  messagesEndRef
+  messagesEndRef,
+  onReact,
+  onReply,
+  onEdit,
+  onDelete
 }: Props) {
   const formatTime = (timestamp: string) => {
     const date = new Date(timestamp)
@@ -73,7 +86,15 @@ export default function ChatMessages({
                 </span>
               </div>
             )}
-            <MessageBubble message={msg} isOwn={isOwn} />
+            <MessageBubble 
+              message={msg} 
+              isOwn={isOwn}
+              currentUserId={currentUserId}
+              onReact={onReact}
+              onReply={onReply}
+              onEdit={onEdit}
+              onDelete={onDelete}
+            />
           </div>
         )
       })}
