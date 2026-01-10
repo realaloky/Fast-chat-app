@@ -1,3 +1,4 @@
+// src/lib/supabase.ts
 import { createClient } from '@supabase/supabase-js'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
@@ -13,10 +14,20 @@ export type User = {
   created_at: string
 }
 
+export type Reaction = {
+  user_id: string
+  emoji: string
+  username?: string
+}
+
 export type Message = {
   id: string
   sender_id: string
   receiver_id: string
   content: string
   created_at: string
-}
+  reactions?: Reaction[]
+  reply_to_id?: string | null
+  edited_at?: string | null
+  deleted_for?: string[]
+  }
