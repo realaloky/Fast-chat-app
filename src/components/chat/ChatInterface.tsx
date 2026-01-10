@@ -1,12 +1,13 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { supabase, User, Message } from '@/lib/supabase'
+import { supabase, User, Message, Reaction } from '@/lib/supabase'
 import ChatHeader from './ChatHeader'
 import ChatMessages from './ChatMessages'
 import ChatInput from './ChatInput'
 import SearchPanel from './SearchPanel'
 import MenuPanel from './MenuPanel'
+import ReplyPreview from './ReplyPreview'
 
 type Props = {
   user: User
@@ -15,6 +16,11 @@ type Props = {
 
 type MessageWithUser = Message & {
   sender_username?: string
+  reply_to?: {
+    id: string
+    content: string
+    sender_username: string
+  }
 }
 
 export default function ChatInterface({ user, onLogout }: Props) {
@@ -31,6 +37,9 @@ export default function ChatInterface({ user, onLogout }: Props) {
   const [recentChats, setRecentChats] = useState<User[]>([])
   const [showMenu, setShowMenu] = useState(false)
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
+  const [replyTo, setReplyTo] = useState<MessageWithUser | null>(null)
+  const [editingMessage, setEditingMessage] = useState<MessageWithUser | null>(null)
+  const [drafts, setDrafts] = useState<{ [key: string]: string }>({})
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null)
@@ -38,6 +47,7 @@ export default function ChatInterface({ user, onLogout }: Props) {
   useEffect(() => {
     loadMessages()
     loadRecentChats()
+    loadDrafts()
     const cleanup = subscribeToMessages()
     return cleanup
   }, [user.id])
@@ -54,8 +64,44 @@ export default function ChatInterface({ user, onLogout }: Props) {
     }
   }, [searchQuery])
 
+  // Auto-save drafts
+  useEffect(() => {
+    if (activeTarget && inputValue.trim()) {
+      saveDraft(activeTarget, inputValue)
+    }
+  }, [inputValue, activeTarget])
+
+  // Load draft when switching chats
+  useEffect(() => {
+    if (activeTarget && drafts[activeTarget]) {
+      setInputValue(drafts[activeTarget])
+    } else {
+      setInputValue('')
+    }
+  }, [activeTarget])
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }
+
+  const loadDrafts = () => {
+    const saved = localStorage.getItem(`drafts_${user.id}`)
+    if (saved) {
+      setDrafts(JSON.parse(saved))
+    }
+  }
+
+  const saveDraft = (targetId: string, content: string) => {
+    const newDrafts = { ...drafts, [targetId]: content }
+    setDrafts(newDrafts)
+    localStorage.setItem(`drafts_${user.id}`, JSON.stringify(newDrafts))
+  }
+
+  const clearDraft = (targetId: string) => {
+    const newDrafts = { ...drafts }
+    delete newDrafts[targetId]
+    setDrafts(newDrafts)
+    localStorage.setItem(`drafts_${user.id}`, JSON.stringify(newDrafts))
   }
 
   const loadMessages = async () => {
@@ -81,11 +127,30 @@ export default function ChatInterface({ user, onLogout }: Props) {
         })
         setUsers(userMap)
         
-        const messagesWithUsernames = msgs.map(msg => ({
-          ...msg,
-          sender_username: userMap[msg.sender_id]?.username || 'Unknown'
-        }))
-        setMessages(messagesWithUsernames)
+        // Load reply references
+        const messagesWithData = await Promise.all(
+          msgs.map(async (msg) => {
+            const msgWithUser: MessageWithUser = {
+              ...msg,
+              sender_username: userMap[msg.sender_id]?.username || 'Unknown'
+            }
+            
+            if (msg.reply_to_id) {
+              const replyMsg = msgs.find(m => m.id === msg.reply_to_id)
+              if (replyMsg) {
+                msgWithUser.reply_to = {
+                  id: replyMsg.id,
+                  content: replyMsg.content,
+                  sender_username: userMap[replyMsg.sender_id]?.username || 'Unknown'
+                }
+              }
+            }
+            
+            return msgWithUser
+          })
+        )
+        
+        setMessages(messagesWithData)
       } else {
         setMessages(msgs)
       }
@@ -136,46 +201,76 @@ export default function ChatInterface({ user, onLogout }: Props) {
       .on(
         'postgres_changes',
         {
-          event: 'INSERT',
+          event: '*',
           schema: 'public',
           table: 'messages',
         },
         async (payload) => {
-          const newMsg = payload.new as Message
-          
-          // Only process if this message involves the current user
-          if (newMsg.sender_id === user.id || newMsg.receiver_id === user.id) {
-            // Get sender username
-            let senderUsername = users[newMsg.sender_id]?.username
+          if (payload.eventType === 'INSERT') {
+            const newMsg = payload.new as Message
             
-            if (!senderUsername) {
-              const { data } = await supabase
-                .from('users')
-                .select('*')
-                .eq('id', newMsg.sender_id)
-                .single()
+            if (newMsg.sender_id === user.id || newMsg.receiver_id === user.id) {
+              let senderUsername = users[newMsg.sender_id]?.username
               
-              if (data) {
-                senderUsername = data.username
-                setUsers(prev => ({ ...prev, [data.id]: data }))
+              if (!senderUsername) {
+                const { data } = await supabase
+                  .from('users')
+                  .select('*')
+                  .eq('id', newMsg.sender_id)
+                  .single()
+                
+                if (data) {
+                  senderUsername = data.username
+                  setUsers(prev => ({ ...prev, [data.id]: data }))
+                }
               }
-            }
-            
-            // Add message to state
-            setMessages((prev) => {
-              // Check if message already exists
-              const exists = prev.some(m => m.id === newMsg.id)
-              if (exists) return prev
               
-              // Add new message
-              return [...prev, { ...newMsg, sender_username: senderUsername || 'Unknown' }]
-            })
+              const msgWithData: MessageWithUser = {
+                ...newMsg,
+                sender_username: senderUsername || 'Unknown'
+              }
+              
+              if (newMsg.reply_to_id) {
+                const { data: replyData } = await supabase
+                  .from('messages')
+                  .select('*')
+                  .eq('id', newMsg.reply_to_id)
+                  .single()
+                
+                if (replyData) {
+                  msgWithData.reply_to = {
+                    id: replyData.id,
+                    content: replyData.content,
+                    sender_username: users[replyData.sender_id]?.username || 'Unknown'
+                  }
+                }
+              }
+              
+              setMessages((prev) => {
+                const exists = prev.some(m => m.id === newMsg.id)
+                if (exists) return prev
+                return [...prev, msgWithData]
+              })
+            }
+          } else if (payload.eventType === 'UPDATE') {
+            const updatedMsg = payload.new as Message
+            
+            setMessages((prev) =>
+              prev.map((m) => {
+                if (m.id === updatedMsg.id) {
+                  return {
+                    ...m,
+                    ...updatedMsg,
+                  }
+                }
+                return m
+              })
+            )
           }
         }
       )
       .subscribe()
 
-    // Return cleanup function
     return () => {
       supabase.removeChannel(channel)
     }
@@ -187,6 +282,12 @@ export default function ChatInterface({ user, onLogout }: Props) {
 
     const content = inputValue.trim()
     let targetUserId = activeTarget
+
+    // Handle editing
+    if (editingMessage) {
+      await handleEditMessage(editingMessage.id, content)
+      return
+    }
 
     if (content.startsWith('@')) {
       const match = content.match(/^@(\d{10})/)
@@ -229,6 +330,8 @@ export default function ChatInterface({ user, onLogout }: Props) {
 
     setInputValue('')
     setIsTyping(false)
+    setReplyTo(null)
+    if (activeTarget) clearDraft(activeTarget)
     inputRef.current?.focus()
   }
 
@@ -241,7 +344,18 @@ export default function ChatInterface({ user, onLogout }: Props) {
       receiver_id: receiverId,
       content,
       created_at: new Date().toISOString(),
-      sender_username: user.username
+      sender_username: user.username,
+      reactions: [],
+      reply_to_id: replyTo?.id || null,
+      deleted_for: []
+    }
+    
+    if (replyTo) {
+      optimisticMessage.reply_to = {
+        id: replyTo.id,
+        content: replyTo.content,
+        sender_username: replyTo.sender_username || 'Unknown'
+      }
     }
     
     setMessages((prev) => [...prev, optimisticMessage])
@@ -252,6 +366,8 @@ export default function ChatInterface({ user, onLogout }: Props) {
         sender_id: user.id,
         receiver_id: receiverId,
         content,
+        reply_to_id: replyTo?.id || null,
+        reactions: []
       })
       .select()
       .single()
@@ -262,8 +378,132 @@ export default function ChatInterface({ user, onLogout }: Props) {
       alert('Failed to send message')
     } else if (data) {
       setMessages((prev) => 
-        prev.map(m => m.id === tempId ? { ...data, sender_username: user.username } : m)
+        prev.map(m => m.id === tempId ? { ...optimisticMessage, id: data.id } : m)
       )
+    }
+  }
+
+  const handleReaction = async (messageId: string, emoji: string) => {
+    const message = messages.find(m => m.id === messageId)
+    if (!message) return
+
+    const reactions = message.reactions || []
+    const existingReaction = reactions.find(
+      r => r.user_id === user.id && r.emoji === emoji
+    )
+
+    let newReactions: Reaction[]
+    
+    if (existingReaction) {
+      // Remove reaction
+      newReactions = reactions.filter(
+        r => !(r.user_id === user.id && r.emoji === emoji)
+      )
+    } else {
+      // Add reaction
+      newReactions = [...reactions, {
+        user_id: user.id,
+        emoji,
+        username: user.username
+      }]
+    }
+
+    // Optimistic update
+    setMessages(prev =>
+      prev.map(m =>
+        m.id === messageId ? { ...m, reactions: newReactions } : m
+      )
+    )
+
+    // Update database
+    const { error } = await supabase
+      .from('messages')
+      .update({ reactions: newReactions })
+      .eq('id', messageId)
+
+    if (error) {
+      console.error('Reaction error:', error)
+      // Revert on error
+      setMessages(prev =>
+        prev.map(m =>
+          m.id === messageId ? { ...m, reactions } : m
+        )
+      )
+    }
+  }
+
+  const handleReply = (message: MessageWithUser) => {
+    setReplyTo(message)
+    inputRef.current?.focus()
+  }
+
+  const handleEdit = (message: MessageWithUser) => {
+    setEditingMessage(message)
+    setInputValue(message.content)
+    inputRef.current?.focus()
+  }
+
+  const handleEditMessage = async (messageId: string, newContent: string) => {
+    // Optimistic update
+    setMessages(prev =>
+      prev.map(m =>
+        m.id === messageId
+          ? { ...m, content: newContent, edited_at: new Date().toISOString() }
+          : m
+      )
+    )
+
+    const { error } = await supabase
+      .from('messages')
+      .update({
+        content: newContent,
+        edited_at: new Date().toISOString()
+      })
+      .eq('id', messageId)
+
+    if (error) {
+      console.error('Edit error:', error)
+      alert('Failed to edit message')
+      loadMessages()
+    }
+
+    setEditingMessage(null)
+    setInputValue('')
+  }
+
+  const handleDelete = async (messageId: string, forEveryone: boolean) => {
+    if (forEveryone) {
+      // Delete for everyone
+      if (!confirm('Delete this message for everyone?')) return
+      
+      const { error } = await supabase
+        .from('messages')
+        .delete()
+        .eq('id', messageId)
+
+      if (!error) {
+        setMessages(prev => prev.filter(m => m.id !== messageId))
+      }
+    } else {
+      // Delete for me
+      const message = messages.find(m => m.id === messageId)
+      if (!message) return
+
+      const deletedFor = message.deleted_for || []
+      const newDeletedFor = [...deletedFor, user.id]
+
+      const { error } = await supabase
+        .from('messages')
+        .update({ deleted_for: newDeletedFor })
+        .eq('id', messageId)
+
+      if (!error) {
+        setMessages(prev =>
+          prev.map(m =>
+            m.id === messageId ? { ...m, deleted_for: newDeletedFor } : m
+          )
+        )
+      }
     }
   }
 
@@ -377,8 +617,41 @@ export default function ChatInterface({ user, onLogout }: Props) {
           targetUsername={targetUsername}
           loading={loading}
           messagesEndRef={messagesEndRef}
+          onReact={handleReaction}
+          onReply={handleReply}
+          onEdit={handleEdit}
+          onDelete={handleDelete}
         />
       </div>
+
+      {replyTo && (
+        <ReplyPreview
+          replyTo={replyTo}
+          onCancel={() => setReplyTo(null)}
+        />
+      )}
+
+      {editingMessage && (
+        <div className="bg-amber-600/20 border-l-4 border-amber-500 p-3 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <svg className="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            </svg>
+            <p className="text-xs font-semibold text-amber-400">Editing message</p>
+          </div>
+          <button
+            onClick={() => {
+              setEditingMessage(null)
+              setInputValue('')
+            }}
+            className="p-1 hover:bg-slate-600 rounded-full transition-colors"
+          >
+            <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      )}
 
       <ChatInput
         inputValue={inputValue}
@@ -393,3 +666,4 @@ export default function ChatInterface({ user, onLogout }: Props) {
       />
     </div>
   )
+}
