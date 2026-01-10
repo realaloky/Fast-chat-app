@@ -52,9 +52,16 @@ export default function MessageBubble({
   }
 
   const handleLongPressStart = (e: React.TouchEvent | React.MouseEvent) => {
+    // Prevent default behavior (text selection, context menu)
     e.preventDefault()
+    e.stopPropagation()
     
     longPressTimer.current = setTimeout(() => {
+      // Haptic feedback on mobile (if supported)
+      if ('vibrate' in navigator) {
+        navigator.vibrate(50)
+      }
+      
       const rect = bubbleRef.current?.getBoundingClientRect()
       if (rect) {
         setActionPosition({
@@ -66,9 +73,26 @@ export default function MessageBubble({
     }, 500)
   }
 
-  const handleLongPressEnd = () => {
+  const handleLongPressEnd = (e: React.TouchEvent | React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    
     if (longPressTimer.current) {
       clearTimeout(longPressTimer.current)
+    }
+  }
+
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    
+    const rect = bubbleRef.current?.getBoundingClientRect()
+    if (rect) {
+      setActionPosition({
+        x: rect.left + rect.width / 2,
+        y: rect.top
+      })
+      setShowActions(true)
     }
   }
 
@@ -92,7 +116,12 @@ export default function MessageBubble({
     <>
       <div 
         ref={bubbleRef}
-        className={`flex ${isOwn ? 'justify-end' : 'justify-start'} mb-2 animate-fade-in`}
+        className={`flex ${isOwn ? 'justify-end' : 'justify-start'} mb-2 animate-fade-in select-none`}
+        style={{ 
+          WebkitUserSelect: 'none',
+          userSelect: 'none',
+          WebkitTouchCallout: 'none'
+        }}
         onContextMenu={handleContextMenu}
         onTouchStart={handleLongPressStart}
         onTouchEnd={handleLongPressEnd}
@@ -196,4 +225,4 @@ export default function MessageBubble({
       )}
     </>
   )
-                }
+}
