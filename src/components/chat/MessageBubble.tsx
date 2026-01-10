@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef } from 'react'
-import { Message, Reaction } from '@/lib/supabase'
+import { Message } from '@/lib/supabase'
 import MessageReactions from './MessageReactions'
 import MessageActions from './MessageActions'
 
@@ -101,7 +101,7 @@ export default function MessageBubble({
     <>
       <div 
         ref={bubbleRef}
-        className={`flex ${isOwn ? 'justify-end' : 'justify-start'} mb-2 animate-fade-in select-none`}
+        className={`flex ${isOwn ? 'justify-end' : 'justify-start'} mb-2 animate-fade-in`}
         style={{ 
           WebkitUserSelect: 'none',
           userSelect: 'none',
