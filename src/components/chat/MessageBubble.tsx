@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef } from 'react'
 import { Message, Reaction } from '@/lib/supabase'
 import MessageReactions from './MessageReactions'
 import MessageActions from './MessageActions'
@@ -38,7 +38,6 @@ export default function MessageBubble({
   const bubbleRef = useRef<HTMLDivElement>(null)
   const longPressTimer = useRef<NodeJS.Timeout | null>(null)
 
-  // Check if message is deleted for current user
   const isDeletedForMe = message.deleted_for?.includes(currentUserId)
   
   if (isDeletedForMe) {
@@ -52,12 +51,10 @@ export default function MessageBubble({
   }
 
   const handleLongPressStart = (e: React.TouchEvent | React.MouseEvent) => {
-    // Prevent default behavior (text selection, context menu)
     e.preventDefault()
     e.stopPropagation()
     
     longPressTimer.current = setTimeout(() => {
-      // Haptic feedback on mobile (if supported)
       if ('vibrate' in navigator) {
         navigator.vibrate(50)
       }
@@ -86,18 +83,6 @@ export default function MessageBubble({
     e.preventDefault()
     e.stopPropagation()
     
-    const rect = bubbleRef.current?.getBoundingClientRect()
-    if (rect) {
-      setActionPosition({
-        x: rect.left + rect.width / 2,
-        y: rect.top
-      })
-      setShowActions(true)
-    }
-  }
-
-  const handleContextMenu = (e: React.MouseEvent) => {
-    e.preventDefault()
     const rect = bubbleRef.current?.getBoundingClientRect()
     if (rect) {
       setActionPosition({
@@ -150,7 +135,6 @@ export default function MessageBubble({
                 </p>
               )}
               
-              {/* Reply Preview */}
               {message.reply_to && (
                 <div className={`mb-2 pl-2 border-l-2 ${isOwn ? 'border-blue-300' : 'border-slate-500'}`}>
                   <p className={`text-[10px] font-semibold ${isOwn ? 'text-blue-200' : 'text-slate-400'}`}>
@@ -164,10 +148,8 @@ export default function MessageBubble({
                 </div>
               )}
               
-              {/* Message Content */}
               <p className="break-words leading-relaxed text-[15px]">{message.content}</p>
               
-              {/* Time & Edit Indicator */}
               <div className="flex items-center gap-2 mt-1">
                 <p className={`text-[10px] ${isOwn ? 'text-blue-200' : 'text-slate-400'}`}>
                   {new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -188,7 +170,6 @@ export default function MessageBubble({
               </div>
             </div>
             
-            {/* Reactions */}
             <MessageReactions 
               reactions={message.reactions || []}
               currentUserId={currentUserId}
@@ -198,7 +179,6 @@ export default function MessageBubble({
         </div>
       </div>
 
-      {/* Action Menu */}
       {showActions && (
         <MessageActions
           messageId={message.id}
