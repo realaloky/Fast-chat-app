@@ -53,3 +53,20 @@ body {
 .animate-scale-in {
   animation: scale-in 0.15s ease-out;
 }
+/* Add to src/app/globals.css - Disable text selection for message bubbles */
+
+.select-none {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* Allow text selection when explicitly needed */
+.select-text {
+  -webkit-user-select: text;
+  -moz-user-select: text;
+  -ms-user-select: text;
+  user-select: text;
+}
