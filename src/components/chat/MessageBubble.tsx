@@ -50,39 +50,7 @@ export default function MessageBubble({
     )
   }
 
-  const handleLongPressStart = (e: React.TouchEvent | React.MouseEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    
-    longPressTimer.current = setTimeout(() => {
-      if ('vibrate' in navigator) {
-        navigator.vibrate(50)
-      }
-      
-      const rect = bubbleRef.current?.getBoundingClientRect()
-      if (rect) {
-        setActionPosition({
-          x: rect.left + rect.width / 2,
-          y: rect.top
-        })
-        setShowActions(true)
-      }
-    }, 500)
-  }
-
-  const handleLongPressEnd = (e: React.TouchEvent | React.MouseEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    
-    if (longPressTimer.current) {
-      clearTimeout(longPressTimer.current)
-    }
-  }
-
-  const handleContextMenu = (e: React.MouseEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    
+  const showActionMenu = () => {
     const rect = bubbleRef.current?.getBoundingClientRect()
     if (rect) {
       setActionPosition({
@@ -93,8 +61,31 @@ export default function MessageBubble({
     }
   }
 
-  const handleReactionClick = (emoji: string) => {
-    onReact(message.id, emoji)
+  const handleLongPress = (e: React.TouchEvent | React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    
+    longPressTimer.current = setTimeout(() => {
+      if ('vibrate' in navigator) {
+        navigator.vibrate(50)
+      }
+      showActionMenu()
+    }, 500)
+  }
+
+  const handlePressEnd = (e: React.TouchEvent | React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current)
+    }
+  }
+
+  const handleRightClick = (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    showActionMenu()
   }
 
   return (
@@ -107,12 +98,12 @@ export default function MessageBubble({
           userSelect: 'none',
           WebkitTouchCallout: 'none'
         }}
-        onContextMenu={handleContextMenu}
-        onTouchStart={handleLongPressStart}
-        onTouchEnd={handleLongPressEnd}
-        onMouseDown={handleLongPressStart}
-        onMouseUp={handleLongPressEnd}
-        onMouseLeave={handleLongPressEnd}
+        onContextMenu={handleRightClick}
+        onTouchStart={handleLongPress}
+        onTouchEnd={handlePressEnd}
+        onMouseDown={handleLongPress}
+        onMouseUp={handlePressEnd}
+        onMouseLeave={handlePressEnd}
       >
         <div className={`flex items-end gap-2 max-w-[85%] ${isOwn ? 'flex-row-reverse' : 'flex-row'}`}>
           {!isOwn && (
@@ -173,7 +164,7 @@ export default function MessageBubble({
             <MessageReactions 
               reactions={message.reactions || []}
               currentUserId={currentUserId}
-              onReactionClick={handleReactionClick}
+              onReactionClick={(emoji) => onReact(message.id, emoji)}
             />
           </div>
         </div>
@@ -205,4 +196,4 @@ export default function MessageBubble({
       )}
     </>
   )
-}
+                                                        }
