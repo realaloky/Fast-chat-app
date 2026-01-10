@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import LoginForm from '@/components/LoginForm'
-import ChatInterface from '@/components/ChatInterface'
+import ChatInterface from '@/components/chat/ChatInterface'
 import { User } from '@/lib/supabase'
 
 export default function Home() {
