@@ -4,9 +4,11 @@ import { useState, useRef } from 'react'
 import { Message } from '@/lib/supabase'
 import MessageReactions from './MessageReactions'
 import MessageActions from './MessageActions'
+import { motion } from 'framer-motion'
 
 type MessageWithUser = Message & {
   sender_username?: string
+  sender_avatar?: string | null
   reply_to?: {
     id: string
     content: string
@@ -43,7 +45,7 @@ export default function MessageBubble({
   if (isDeletedForMe) {
     return (
       <div className={`flex ${isOwn ? 'justify-end' : 'justify-start'} mb-2`}>
-        <div className="px-4 py-2 rounded-lg bg-slate-800/50 text-slate-500 italic text-sm">
+        <div className="px-4 py-2 rounded-2xl bg-white/5 text-white/40 italic text-sm">
           🚫 This message was deleted
         </div>
       </div>
@@ -53,10 +55,7 @@ export default function MessageBubble({
   const showActionMenu = () => {
     const rect = bubbleRef.current?.getBoundingClientRect()
     if (rect) {
-      setActionPosition({
-        x: rect.left + rect.width / 2,
-        y: rect.top
-      })
+      setActionPosition({ x: rect.left + rect.width / 2, y: rect.top })
       setShowActions(true)
     }
   }
@@ -66,9 +65,7 @@ export default function MessageBubble({
     e.stopPropagation()
     
     longPressTimer.current = setTimeout(() => {
-      if ('vibrate' in navigator) {
-        navigator.vibrate(50)
-      }
+      if ('vibrate' in navigator) navigator.vibrate(50)
       showActionMenu()
     }, 500)
   }
@@ -76,10 +73,7 @@ export default function MessageBubble({
   const handlePressEnd = (e: React.TouchEvent | React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    
-    if (longPressTimer.current) {
-      clearTimeout(longPressTimer.current)
-    }
+    if (longPressTimer.current) clearTimeout(longPressTimer.current)
   }
 
   const handleRightClick = (e: React.MouseEvent) => {
@@ -90,14 +84,12 @@ export default function MessageBubble({
 
   return (
     <>
-      <div 
+      <motion.div
         ref={bubbleRef}
-        className={`flex ${isOwn ? 'justify-end' : 'justify-start'} mb-2 animate-fade-in`}
-        style={{ 
-          WebkitUserSelect: 'none',
-          userSelect: 'none',
-          WebkitTouchCallout: 'none'
-        }}
+        initial={{ opacity: 0, x: isOwn ? 50 : -50, scale: 0.8 }}
+        animate={{ opacity: 1, x: 0, scale: 1 }}
+        transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+        className={`flex ${isOwn ? 'justify-end' : 'justify-start'} mb-3 no-select`}
         onContextMenu={handleRightClick}
         onTouchStart={handleLongPress}
         onTouchEnd={handlePressEnd}
@@ -105,9 +97,17 @@ export default function MessageBubble({
         onMouseUp={handlePressEnd}
         onMouseLeave={handlePressEnd}
       >
-        <div className={`flex items-end gap-2 max-w-[85%] ${isOwn ? 'flex-row-reverse' : 'flex-row'}`}>
-          {!isOwn && (
-            <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-pink-600 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0 shadow-lg">
+        <div className={`flex items-end gap-2 max-w-[75%] ${isOwn ? 'flex-row-reverse' : 'flex-row'}`}>
+          {!isOwn && message.sender_avatar && (
+            <img
+              src={message.sender_avatar}
+              alt={message.sender_username}
+              className="w-8 h-8 rounded-full object-cover border-2 border-white/20 flex-shrink-0"
+            />
+          )}
+          
+          {!isOwn && !message.sender_avatar && (
+            <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0 border-2 border-white/20">
               {message.sender_username?.charAt(0).toUpperCase() || '?'}
             </div>
           )}
@@ -116,8 +116,8 @@ export default function MessageBubble({
             <div
               className={`px-4 py-3 rounded-2xl shadow-lg backdrop-blur-sm ${
                 isOwn
-                  ? 'bg-gradient-to-br from-blue-600 to-blue-700 text-white rounded-br-sm'
-                  : 'bg-slate-700/90 text-slate-100 rounded-bl-sm'
+                  ? 'message-bubble-own'
+                  : 'message-bubble-other'
               }`}
             >
               {!isOwn && (
@@ -127,11 +127,11 @@ export default function MessageBubble({
               )}
               
               {message.reply_to && (
-                <div className={`mb-2 pl-2 border-l-2 ${isOwn ? 'border-blue-300' : 'border-slate-500'}`}>
-                  <p className={`text-[10px] font-semibold ${isOwn ? 'text-blue-200' : 'text-slate-400'}`}>
+                <div className={`mb-2 pl-2 border-l-2 ${isOwn ? 'border-white/40' : 'border-white/30'}`}>
+                  <p className={`text-[10px] font-semibold ${isOwn ? 'text-white/70' : 'text-white/60'}`}>
                     {message.reply_to.sender_username}
                   </p>
-                  <p className={`text-xs ${isOwn ? 'text-blue-100' : 'text-slate-300'} truncate`}>
+                  <p className={`text-xs ${isOwn ? 'text-white/60' : 'text-white/50'} truncate`}>
                     {message.reply_to.content.length > 50 
                       ? message.reply_to.content.substring(0, 50) + '...' 
                       : message.reply_to.content}
@@ -139,21 +139,34 @@ export default function MessageBubble({
                 </div>
               )}
               
-              <p className="break-words leading-relaxed text-[15px]">{message.content}</p>
+              {message.message_type === 'image' && message.media_url && (
+                <div className="mb-2">
+                  <img
+                    src={message.media_url}
+                    alt="Shared image"
+                    className="rounded-lg max-w-full h-auto cursor-pointer hover:opacity-90 transition-opacity"
+                    onClick={() => window.open(message.media_url!, '_blank')}
+                  />
+                </div>
+              )}
+              
+              {message.content && (
+                <p className="break-words leading-relaxed text-[15px]">{message.content}</p>
+              )}
               
               <div className="flex items-center gap-2 mt-1">
-                <p className={`text-[10px] ${isOwn ? 'text-blue-200' : 'text-slate-400'}`}>
+                <p className={`text-[10px] ${isOwn ? 'text-white/50' : 'text-white/40'}`}>
                   {new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </p>
                 
                 {message.edited_at && (
-                  <span className={`text-[10px] italic ${isOwn ? 'text-blue-200' : 'text-slate-400'}`}>
+                  <span className={`text-[10px] italic ${isOwn ? 'text-white/50' : 'text-white/40'}`}>
                     (edited)
                   </span>
                 )}
                 
                 {isOwn && message.id.startsWith('temp-') && (
-                  <svg className="w-3 h-3 text-blue-300 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <svg className="w-3 h-3 animate-spin opacity-50" fill="none" viewBox="0 0 24 24">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                   </svg>
@@ -168,7 +181,7 @@ export default function MessageBubble({
             />
           </div>
         </div>
-      </div>
+      </motion.div>
 
       {showActions && (
         <MessageActions
@@ -196,4 +209,4 @@ export default function MessageBubble({
       )}
     </>
   )
-                                                        }
+        }
