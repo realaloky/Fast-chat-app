@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import LoginForm from '@/components/LoginForm'
 import ChatInterface from '@/components/chat/ChatInterface'
-import { User } from '@/lib/supabase'
+import { User, logout } from '@/lib/supabase'
 
 export default function Home() {
   const [user, setUser] = useState<User | null>(null)
@@ -21,15 +21,21 @@ export default function Home() {
     setUser(loggedInUser)
   }
 
-  const handleLogout = () => {
-    localStorage.removeItem('chat_user')
-    setUser(null)
+  const handleLogout = async () => {
+    if (user) {
+      await logout(user.id)
+      localStorage.removeItem('chat_user')
+      setUser(null)
+    }
   }
 
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <p className="text-xl">Loading...</p>
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-white mx-auto mb-4"></div>
+          <p className="text-white/80">Loading...</p>
+        </div>
       </div>
     )
   }
