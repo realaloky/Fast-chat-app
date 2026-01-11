@@ -1,13 +1,15 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { supabase, User, Message, Reaction } from '@/lib/supabase'
+import { supabase, User, Message, searchUsers, uploadImage } from '@/lib/supabase'
 import ChatHeader from './ChatHeader'
 import ChatMessages from './ChatMessages'
 import ChatInput from './ChatInput'
 import SearchPanel from './SearchPanel'
-import MenuPanel from './MenuPanel'
 import ReplyPreview from './ReplyPreview'
+import ProfileView from '../ProfileView'
+import ImagePreview from './ImagePreview'
+import { motion, AnimatePresence } from 'framer-motion'
 
 type Props = {
   user: User
@@ -16,6 +18,7 @@ type Props = {
 
 type MessageWithUser = Message & {
   sender_username?: string
+  sender_avatar?: string | null
   reply_to?: {
     id: string
     content: string
@@ -23,31 +26,29 @@ type MessageWithUser = Message & {
   }
 }
 
-export default function ChatInterface({ user, onLogout }: Props) {
+export default function ChatInterface({ user: initialUser, onLogout }: Props) {
+  const [user, setUser] = useState(initialUser)
   const [messages, setMessages] = useState<MessageWithUser[]>([])
   const [inputValue, setInputValue] = useState('')
   const [activeTarget, setActiveTarget] = useState<string | null>(null)
-  const [targetUsername, setTargetUsername] = useState<string>('')
+  const [targetUser, setTargetUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(false)
   const [users, setUsers] = useState<{ [key: string]: User }>({})
-  const [isTyping, setIsTyping] = useState(false)
-  const [searchQuery, setSearchQuery] = useState('')
   const [showSearch, setShowSearch] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<User[]>([])
   const [recentChats, setRecentChats] = useState<User[]>([])
-  const [showMenu, setShowMenu] = useState(false)
-  const [showEmojiPicker, setShowEmojiPicker] = useState(false)
   const [replyTo, setReplyTo] = useState<MessageWithUser | null>(null)
   const [editingMessage, setEditingMessage] = useState<MessageWithUser | null>(null)
-  const [drafts, setDrafts] = useState<{ [key: string]: string }>({})
+  const [showProfile, setShowProfile] = useState(false)
+  const [selectedImage, setSelectedImage] = useState<File | null>(null)
+  const [uploadingImage, setUploadingImage] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
-  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   useEffect(() => {
     loadMessages()
     loadRecentChats()
-    loadDrafts()
     const cleanup = subscribeToMessages()
     return cleanup
   }, [user.id])
@@ -58,50 +59,14 @@ export default function ChatInterface({ user, onLogout }: Props) {
 
   useEffect(() => {
     if (searchQuery.trim()) {
-      searchUsers()
+      performSearch()
     } else {
       setSearchResults([])
     }
   }, [searchQuery])
 
-  // Auto-save drafts
-  useEffect(() => {
-    if (activeTarget && inputValue.trim()) {
-      saveDraft(activeTarget, inputValue)
-    }
-  }, [inputValue, activeTarget])
-
-  // Load draft when switching chats
-  useEffect(() => {
-    if (activeTarget && drafts[activeTarget]) {
-      setInputValue(drafts[activeTarget])
-    } else {
-      setInputValue('')
-    }
-  }, [activeTarget])
-
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }
-
-  const loadDrafts = () => {
-    const saved = localStorage.getItem(`drafts_${user.id}`)
-    if (saved) {
-      setDrafts(JSON.parse(saved))
-    }
-  }
-
-  const saveDraft = (targetId: string, content: string) => {
-    const newDrafts = { ...drafts, [targetId]: content }
-    setDrafts(newDrafts)
-    localStorage.setItem(`drafts_${user.id}`, JSON.stringify(newDrafts))
-  }
-
-  const clearDraft = (targetId: string) => {
-    const newDrafts = { ...drafts }
-    delete newDrafts[targetId]
-    setDrafts(newDrafts)
-    localStorage.setItem(`drafts_${user.id}`, JSON.stringify(newDrafts))
   }
 
   const loadMessages = async () => {
@@ -127,32 +92,13 @@ export default function ChatInterface({ user, onLogout }: Props) {
         })
         setUsers(userMap)
         
-        // Load reply references
-        const messagesWithData = await Promise.all(
-          msgs.map(async (msg) => {
-            const msgWithUser: MessageWithUser = {
-              ...msg,
-              sender_username: userMap[msg.sender_id]?.username || 'Unknown'
-            }
-            
-            if (msg.reply_to_id) {
-              const replyMsg = msgs.find(m => m.id === msg.reply_to_id)
-              if (replyMsg) {
-                msgWithUser.reply_to = {
-                  id: replyMsg.id,
-                  content: replyMsg.content,
-                  sender_username: userMap[replyMsg.sender_id]?.username || 'Unknown'
-                }
-              }
-            }
-            
-            return msgWithUser
-          })
-        )
+        const messagesWithData = msgs.map((msg) => ({
+          ...msg,
+          sender_username: userMap[msg.sender_id]?.username || 'Unknown',
+          sender_avatar: userMap[msg.sender_id]?.avatar_url || null
+        }))
         
         setMessages(messagesWithData)
-      } else {
-        setMessages(msgs)
       }
     }
     setLoading(false)
@@ -182,17 +128,9 @@ export default function ChatInterface({ user, onLogout }: Props) {
     }
   }
 
-  const searchUsers = async () => {
-    const { data } = await supabase
-      .from('users')
-      .select('*')
-      .or(`username.ilike.%${searchQuery}%,user_code.ilike.%${searchQuery}%`)
-      .neq('id', user.id)
-      .limit(10)
-    
-    if (data) {
-      setSearchResults(data as User[])
-    }
+  const performSearch = async () => {
+    const results = await searchUsers(searchQuery, user.id)
+    setSearchResults(results)
   }
 
   const subscribeToMessages = () => {
@@ -200,19 +138,15 @@ export default function ChatInterface({ user, onLogout }: Props) {
       .channel('messages')
       .on(
         'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'messages',
-        },
+        { event: '*', schema: 'public', table: 'messages' },
         async (payload) => {
           if (payload.eventType === 'INSERT') {
             const newMsg = payload.new as Message
             
             if (newMsg.sender_id === user.id || newMsg.receiver_id === user.id) {
-              let senderUsername = users[newMsg.sender_id]?.username
+              let senderData = users[newMsg.sender_id]
               
-              if (!senderUsername) {
+              if (!senderData) {
                 const { data } = await supabase
                   .from('users')
                   .select('*')
@@ -220,30 +154,15 @@ export default function ChatInterface({ user, onLogout }: Props) {
                   .single()
                 
                 if (data) {
-                  senderUsername = data.username
+                  senderData = data
                   setUsers(prev => ({ ...prev, [data.id]: data }))
                 }
               }
               
               const msgWithData: MessageWithUser = {
                 ...newMsg,
-                sender_username: senderUsername || 'Unknown'
-              }
-              
-              if (newMsg.reply_to_id) {
-                const { data: replyData } = await supabase
-                  .from('messages')
-                  .select('*')
-                  .eq('id', newMsg.reply_to_id)
-                  .single()
-                
-                if (replyData) {
-                  msgWithData.reply_to = {
-                    id: replyData.id,
-                    content: replyData.content,
-                    sender_username: users[replyData.sender_id]?.username || 'Unknown'
-                  }
-                }
+                sender_username: senderData?.username || 'Unknown',
+                sender_avatar: senderData?.avatar_url || null
               }
               
               setMessages((prev) => {
@@ -254,17 +173,8 @@ export default function ChatInterface({ user, onLogout }: Props) {
             }
           } else if (payload.eventType === 'UPDATE') {
             const updatedMsg = payload.new as Message
-            
             setMessages((prev) =>
-              prev.map((m) => {
-                if (m.id === updatedMsg.id) {
-                  return {
-                    ...m,
-                    ...updatedMsg,
-                  }
-                }
-                return m
-              })
+              prev.map((m) => m.id === updatedMsg.id ? { ...m, ...updatedMsg } : m)
             )
           }
         }
@@ -278,64 +188,47 @@ export default function ChatInterface({ user, onLogout }: Props) {
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!inputValue.trim()) return
+    
+    if (selectedImage) {
+      await handleSendImage()
+      return
+    }
+    
+    if (!inputValue.trim() || !activeTarget) return
 
     const content = inputValue.trim()
-    let targetUserId = activeTarget
 
-    // Handle editing
     if (editingMessage) {
       await handleEditMessage(editingMessage.id, content)
       return
     }
 
-    if (content.startsWith('@')) {
-      const match = content.match(/^@(\d{10})/)
-      if (match) {
-        const userCode = match[1]
-        
-        const { data: targetUsers } = await supabase
-          .from('users')
-          .select('*')
-          .eq('user_code', userCode)
-
-        if (targetUsers && targetUsers.length > 0) {
-          const targetUser = targetUsers[0] as User
-          targetUserId = targetUser.id
-          setActiveTarget(targetUser.id)
-          setTargetUsername(targetUser.username)
-          
-          const messageContent = content.replace(/^@\d{10}\s*/, '').trim()
-          if (!messageContent) {
-            setInputValue('')
-            return
-          }
-          
-          await sendMessage(messageContent, targetUserId)
-        } else {
-          alert('❌ User not found with code: ' + userCode)
-          return
-        }
-      } else {
-        alert('❌ Invalid format. Use: @1234567890 message')
-        return
-      }
-    } else {
-      if (!targetUserId) {
-        alert('❌ No active chat. Start with @<user_code>')
-        return
-      }
-      await sendMessage(content, targetUserId)
-    }
-
+    await sendMessage(content, activeTarget)
     setInputValue('')
-    setIsTyping(false)
     setReplyTo(null)
-    if (activeTarget) clearDraft(activeTarget)
-    inputRef.current?.focus()
   }
 
-  const sendMessage = async (content: string, receiverId: string) => {
+  const handleSendImage = async () => {
+    if (!selectedImage || !activeTarget) return
+
+    setUploadingImage(true)
+    const imageUrl = await uploadImage(selectedImage, user.id)
+    
+    if (imageUrl) {
+      await sendMessage(inputValue.trim() || '📷 Image', activeTarget, 'image', imageUrl)
+      setSelectedImage(null)
+      setInputValue('')
+    }
+    
+    setUploadingImage(false)
+  }
+
+  const sendMessage = async (
+    content: string, 
+    receiverId: string,
+    messageType: 'text' | 'image' = 'text',
+    mediaUrl?: string
+  ) => {
     const tempId = 'temp-' + Date.now()
     
     const optimisticMessage: MessageWithUser = {
@@ -345,17 +238,12 @@ export default function ChatInterface({ user, onLogout }: Props) {
       content,
       created_at: new Date().toISOString(),
       sender_username: user.username,
+      sender_avatar: user.avatar_url,
       reactions: [],
       reply_to_id: replyTo?.id || null,
-      deleted_for: []
-    }
-    
-    if (replyTo) {
-      optimisticMessage.reply_to = {
-        id: replyTo.id,
-        content: replyTo.content,
-        sender_username: replyTo.sender_username || 'Unknown'
-      }
+      deleted_for: [],
+      message_type: messageType,
+      media_url: mediaUrl || null
     }
     
     setMessages((prev) => [...prev, optimisticMessage])
@@ -367,13 +255,14 @@ export default function ChatInterface({ user, onLogout }: Props) {
         receiver_id: receiverId,
         content,
         reply_to_id: replyTo?.id || null,
-        reactions: []
+        reactions: [],
+        message_type: messageType,
+        media_url: mediaUrl || null
       })
       .select()
       .single()
 
     if (error) {
-      console.error('Send error:', error)
       setMessages((prev) => prev.filter(m => m.id !== tempId))
       alert('Failed to send message')
     } else if (data) {
@@ -392,44 +281,18 @@ export default function ChatInterface({ user, onLogout }: Props) {
       r => r.user_id === user.id && r.emoji === emoji
     )
 
-    let newReactions: Reaction[]
-    
-    if (existingReaction) {
-      // Remove reaction
-      newReactions = reactions.filter(
-        r => !(r.user_id === user.id && r.emoji === emoji)
-      )
-    } else {
-      // Add reaction
-      newReactions = [...reactions, {
-        user_id: user.id,
-        emoji,
-        username: user.username
-      }]
-    }
+    let newReactions = existingReaction
+      ? reactions.filter(r => !(r.user_id === user.id && r.emoji === emoji))
+      : [...reactions, { user_id: user.id, emoji, username: user.username }]
 
-    // Optimistic update
     setMessages(prev =>
-      prev.map(m =>
-        m.id === messageId ? { ...m, reactions: newReactions } : m
-      )
+      prev.map(m => m.id === messageId ? { ...m, reactions: newReactions } : m)
     )
 
-    // Update database
-    const { error } = await supabase
+    await supabase
       .from('messages')
       .update({ reactions: newReactions })
       .eq('id', messageId)
-
-    if (error) {
-      console.error('Reaction error:', error)
-      // Revert on error
-      setMessages(prev =>
-        prev.map(m =>
-          m.id === messageId ? { ...m, reactions } : m
-        )
-      )
-    }
   }
 
   const handleReply = (message: MessageWithUser) => {
@@ -444,7 +307,6 @@ export default function ChatInterface({ user, onLogout }: Props) {
   }
 
   const handleEditMessage = async (messageId: string, newContent: string) => {
-    // Optimistic update
     setMessages(prev =>
       prev.map(m =>
         m.id === messageId
@@ -453,19 +315,10 @@ export default function ChatInterface({ user, onLogout }: Props) {
       )
     )
 
-    const { error } = await supabase
+    await supabase
       .from('messages')
-      .update({
-        content: newContent,
-        edited_at: new Date().toISOString()
-      })
+      .update({ content: newContent, edited_at: new Date().toISOString() })
       .eq('id', messageId)
-
-    if (error) {
-      console.error('Edit error:', error)
-      alert('Failed to edit message')
-      loadMessages()
-    }
 
     setEditingMessage(null)
     setInputValue('')
@@ -473,95 +326,34 @@ export default function ChatInterface({ user, onLogout }: Props) {
 
   const handleDelete = async (messageId: string, forEveryone: boolean) => {
     if (forEveryone) {
-      // Delete for everyone
       if (!confirm('Delete this message for everyone?')) return
-      
-      const { error } = await supabase
-        .from('messages')
-        .delete()
-        .eq('id', messageId)
-
-      if (!error) {
-        setMessages(prev => prev.filter(m => m.id !== messageId))
-      }
+      await supabase.from('messages').delete().eq('id', messageId)
+      setMessages(prev => prev.filter(m => m.id !== messageId))
     } else {
-      // Delete for me
       const message = messages.find(m => m.id === messageId)
       if (!message) return
 
-      const deletedFor = message.deleted_for || []
-      const newDeletedFor = [...deletedFor, user.id]
-
-      const { error } = await supabase
+      const newDeletedFor = [...(message.deleted_for || []), user.id]
+      await supabase
         .from('messages')
         .update({ deleted_for: newDeletedFor })
         .eq('id', messageId)
 
-      if (!error) {
-        setMessages(prev =>
-          prev.map(m =>
-            m.id === messageId ? { ...m, deleted_for: newDeletedFor } : m
-          )
-        )
-      }
+      setMessages(prev =>
+        prev.map(m => m.id === messageId ? { ...m, deleted_for: newDeletedFor } : m)
+      )
     }
   }
 
-  const selectChat = (targetUser: User) => {
-    setActiveTarget(targetUser.id)
-    setTargetUsername(targetUser.username)
+  const selectChat = (target: User) => {
+    setActiveTarget(target.id)
+    setTargetUser(target)
     setShowSearch(false)
-    setShowMenu(false)
     inputRef.current?.focus()
   }
 
-  const handleInputChange = (value: string) => {
-    setInputValue(value)
-    
-    if (!isTyping) setIsTyping(true)
-    
-    if (typingTimeoutRef.current) {
-      clearTimeout(typingTimeoutRef.current)
-    }
-    
-    typingTimeoutRef.current = setTimeout(() => {
-      setIsTyping(false)
-    }, 1000)
-  }
-
-  const handleEmojiSelect = (emoji: string) => {
-    setInputValue(prev => prev + emoji)
-    setShowEmojiPicker(false)
-    inputRef.current?.focus()
-  }
-
-  const copyUserCode = () => {
-    navigator.clipboard.writeText(user.user_code)
-    alert('✅ User code copied!')
-  }
-
-  const clearChat = async () => {
-    if (!activeTarget) return
-    if (!confirm('Clear all messages in this chat?')) return
-    
-    const { error } = await supabase
-      .from('messages')
-      .delete()
-      .or(`and(sender_id.eq.${user.id},receiver_id.eq.${activeTarget}),and(sender_id.eq.${activeTarget},receiver_id.eq.${user.id})`)
-    
-    if (!error) {
-      setMessages(prev => prev.filter(m => 
-        !((m.sender_id === user.id && m.receiver_id === activeTarget) || 
-          (m.sender_id === activeTarget && m.receiver_id === user.id))
-      ))
-      alert('✅ Chat cleared!')
-    }
-  }
-
-  const closeChat = () => {
-    setActiveTarget(null)
-    setTargetUsername('')
-    setShowMenu(false)
+  const handleImageSelect = (file: File) => {
+    setSelectedImage(file)
   }
 
   const getFilteredMessages = () => {
@@ -574,47 +366,37 @@ export default function ChatInterface({ user, onLogout }: Props) {
   }
 
   const filteredMessages = getFilteredMessages()
-  const messageCount = filteredMessages.length
 
   return (
-    <div className="min-h-screen flex flex-col bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900">
+    <div className="h-screen flex flex-col bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
       <ChatHeader
         user={user}
-        activeTarget={activeTarget}
-        targetUsername={targetUsername}
-        messageCount={messageCount}
-        showSearch={showSearch}
-        showMenu={showMenu}
-        onToggleSearch={() => setShowSearch(!showSearch)}
-        onToggleMenu={() => setShowMenu(!showMenu)}
-        onCopyCode={copyUserCode}
+        targetUser={targetUser}
+        messageCount={filteredMessages.length}
+        onSearchToggle={() => setShowSearch(!showSearch)}
+        onProfileOpen={() => setShowProfile(true)}
         onLogout={onLogout}
       />
 
-      {showSearch && (
-        <SearchPanel
-          searchQuery={searchQuery}
-          searchResults={searchResults}
-          recentChats={recentChats}
-          onSearchChange={setSearchQuery}
-          onSelectChat={selectChat}
-        />
-      )}
+      <AnimatePresence>
+        {showSearch && (
+          <SearchPanel
+            searchQuery={searchQuery}
+            searchResults={searchResults}
+            recentChats={recentChats}
+            onSearchChange={setSearchQuery}
+            onSelectChat={selectChat}
+            onClose={() => setShowSearch(false)}
+          />
+        )}
+      </AnimatePresence>
 
-      {showMenu && (
-        <MenuPanel
-          hasActiveChat={!!activeTarget}
-          onClearChat={clearChat}
-          onCloseChat={closeChat}
-        />
-      )}
-
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="flex-1 overflow-y-auto p-4">
         <ChatMessages
           messages={filteredMessages}
           currentUserId={user.id}
           activeTarget={activeTarget}
-          targetUsername={targetUsername}
+          targetUsername={targetUser?.username || ''}
           loading={loading}
           messagesEndRef={messagesEndRef}
           onReact={handleReaction}
@@ -625,45 +407,54 @@ export default function ChatInterface({ user, onLogout }: Props) {
       </div>
 
       {replyTo && (
-        <ReplyPreview
-          replyTo={replyTo}
-          onCancel={() => setReplyTo(null)}
-        />
+        <ReplyPreview replyTo={replyTo} onCancel={() => setReplyTo(null)} />
       )}
 
       {editingMessage && (
-        <div className="bg-amber-600/20 border-l-4 border-amber-500 p-3 flex items-center justify-between">
+        <div className="bg-amber-500/20 border-t border-amber-500/50 p-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <svg className="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
             </svg>
-            <p className="text-xs font-semibold text-amber-400">Editing message</p>
+            <p className="text-sm text-white">Editing message</p>
           </div>
-          <button
-            onClick={() => {
-              setEditingMessage(null)
-              setInputValue('')
-            }}
-            className="p-1 hover:bg-slate-600 rounded-full transition-colors"
-          >
-            <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <button onClick={() => { setEditingMessage(null); setInputValue('') }}>
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
         </div>
       )}
 
+      {selectedImage && (
+        <ImagePreview
+          file={selectedImage}
+          onCancel={() => setSelectedImage(null)}
+        />
+      )}
+
       <ChatInput
         inputValue={inputValue}
-        isTyping={isTyping}
         activeTarget={activeTarget}
-        showEmojiPicker={showEmojiPicker}
-        onInputChange={handleInputChange}
+        onInputChange={setInputValue}
         onSubmit={handleSendMessage}
-        onToggleEmoji={() => setShowEmojiPicker(!showEmojiPicker)}
-        onEmojiSelect={handleEmojiSelect}
+        onImageSelect={handleImageSelect}
         inputRef={inputRef}
+        uploading={uploadingImage}
       />
+
+      <AnimatePresence>
+        {showProfile && (
+          <ProfileView
+            user={user}
+            onClose={() => setShowProfile(false)}
+            onUpdate={(updatedUser) => {
+              setUser(updatedUser)
+              setShowProfile(false)
+            }}
+          />
+        )}
+      </AnimatePresence>
     </div>
   )
-}
+            }
