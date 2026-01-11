@@ -2,10 +2,12 @@
 
 import { Message } from '@/lib/supabase'
 import MessageBubble from './MessageBubble'
-import EmptyState from './EmptyState'
+import { motion } from 'framer-motion'
+import { format, isToday, isYesterday } from 'date-fns'
 
 type MessageWithUser = Message & {
   sender_username?: string
+  sender_avatar?: string | null
   reply_to?: {
     id: string
     content: string
@@ -38,51 +40,83 @@ export default function ChatMessages({
   onEdit,
   onDelete
 }: Props) {
-  const formatTime = (timestamp: string) => {
+  const formatDate = (timestamp: string) => {
     const date = new Date(timestamp)
-    const now = new Date()
-    const diffMs = now.getTime() - date.getTime()
-    const diffMins = Math.floor(diffMs / 60000)
-    
-    if (diffMins < 1) return 'Just now'
-    if (diffMins < 60) return `${diffMins}m ago`
-    if (diffMins < 1440) return `${Math.floor(diffMins / 60)}h ago`
-    
-    return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    if (isToday(date)) return 'Today'
+    if (isYesterday(date)) return 'Yesterday'
+    return format(date, 'MMM d, yyyy')
   }
 
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
-          <p className="text-slate-400">Loading messages...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-4"></div>
+          <p className="text-white/60">Loading messages...</p>
         </div>
       </div>
     )
   }
 
   if (!activeTarget) {
-    return <EmptyState type="no-chat" />
+    return (
+      <div className="flex flex-col items-center justify-center h-full text-center px-6">
+        <motion.div
+          initial={{ scale: 0.8, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          className="glass-dark rounded-3xl p-12"
+        >
+          <div className="text-6xl mb-6">💬</div>
+          <h2 className="text-2xl font-bold mb-2">Your Messages</h2>
+          <p className="text-white/60 mb-6">Select a conversation or search for someone to start chatting</p>
+          <div className="flex gap-4 justify-center">
+            <div className="glass p-4 rounded-xl">
+              <div className="text-2xl mb-2">⚡</div>
+              <p className="text-sm">Fast</p>
+            </div>
+            <div className="glass p-4 rounded-xl">
+              <div className="text-2xl mb-2">🔒</div>
+              <p className="text-sm">Secure</p>
+            </div>
+            <div className="glass p-4 rounded-xl">
+              <div className="text-2xl mb-2">🎨</div>
+              <p className="text-sm">Beautiful</p>
+            </div>
+          </div>
+        </motion.div>
+      </div>
+    )
   }
 
   if (messages.length === 0) {
-    return <EmptyState type="no-messages" targetUsername={targetUsername} />
+    return (
+      <div className="flex items-center justify-center h-full">
+        <motion.div
+          initial={{ scale: 0.8, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          className="text-center"
+        >
+          <div className="text-5xl mb-4">👋</div>
+          <p className="text-xl font-semibold mb-2">Start the conversation</p>
+          <p className="text-white/60">Send the first message to {targetUsername}!</p>
+        </motion.div>
+      </div>
+    )
   }
 
   return (
     <>
       {messages.map((msg, index) => {
         const isOwn = msg.sender_id === currentUserId
-        const showTimestamp = index === 0 || 
-          (new Date(msg.created_at).getTime() - new Date(messages[index - 1].created_at).getTime() > 300000)
+        const showDate = index === 0 || 
+          formatDate(msg.created_at) !== formatDate(messages[index - 1].created_at)
         
         return (
           <div key={msg.id}>
-            {showTimestamp && (
-              <div className="flex justify-center my-4">
-                <span className="text-xs text-slate-400 bg-slate-800/80 backdrop-blur-sm px-3 py-1 rounded-full shadow-lg">
-                  {formatTime(msg.created_at)}
+            {showDate && (
+              <div className="flex justify-center my-6">
+                <span className="glass-dark px-4 py-1.5 rounded-full text-xs font-medium">
+                  {formatDate(msg.created_at)}
                 </span>
               </div>
             )}
